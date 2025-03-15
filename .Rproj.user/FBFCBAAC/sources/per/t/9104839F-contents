@@ -1,0 +1,942 @@
+---
+title: "Oeco.final"
+author: "Matt Wuensch"
+date: "9/2/2024"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+###### Chunk 1, selection ratios for foraging experiments #####
+```{r}
+###### Chunk 1, selection ratios for foraging experiments #####
+# Color palette info
+#install.packages("NatParksPalettes")
+library(NatParksPalettes)
+library(ggplot2)
+# Color scale you'll want is triglav, 12 options, continuous
+tri <- natparks.pals(name = "Triglav", n = 12, type = "continuous")
+
+triglav.12 <- c("#386EC2", "#708EBA", "#A9AEB3", "#AA7373", "#9E2025", "#8A1907", "#714308", "#71610D", "#996B17", "#AB6E24", "#66533E", "#213958")
+
+library(ggplot2)
+show_colors <- function(colors) { 
+  ggplot(data.frame(id=seq_along(colors), color=colors)) + 
+    geom_tile(aes(id, 1, fill=color)) + 
+    scale_fill_identity()
+}
+
+
+# Start of code
+library(dplyr)
+library(tidyr)
+library(adehabitatHS)
+library(ggplot2)
+forage.dat <- read.csv("C:/Users/mwuen/Documents/R/CH2_Cafe_Study/WTD.forage.csv")
+#View(forage.dat)
+str(forage.dat)
+
+forage.dat$Season <- as.factor(forage.dat$Season)
+forage.dat$deer <- as.factor(forage.dat$deer)
+forage.dat$treesp <- as.factor(forage.dat$treesp)
+
+# To be to get standardized selection index for each doe, you'll need to get a total of the number of bites that they took of each species for each doe. Reorganize df to fit that.
+
+forage.dat.doe <- forage.dat %>%
+  complete(deer, Season, treesp) %>%
+  group_by(deer, Season, treesp) %>%
+  summarize(bites = sum(bites, na.rm = TRUE))
+
+# Preference scores
+
+## Split the data into wide formatting
+fdd.wide <- spread(forage.dat.doe, treesp, bites)
+
+## Creating a vector of tree sp and availability 
+### Writing in the values of the vector
+treesp.avail <- c(0.117256637, 0.117256637, 0.066371681,0.117256637,0.099557522,0.265486726,0.099557522,0.117256637)
+
+### Naming the values
+names(treesp.avail) <- c("AELM","BWIL","EHEM","ERCD","SMAP","WASH","WOAK","WPIN")
+
+### Summer
+fdd.wide.s <- fdd.wide %>%
+  filter(Season == "Summer")
+
+#### Values for the whole summer "population"
+fdd.wide.s.colsums <- apply(fdd.wide.s[,3:10], 2, sum)
+  
+#### Using adehabitat hs to run a type I (population level) analysis of preference
+(wi.s <- widesI(fdd.wide.s.colsums, treesp.avail, avknown = TRUE, alpha = 0.05))
+  
+# A general note to determine value you'll need to apply bonferroni correction to confidence intervals. Bonferonni alpha = 0.00625 (Because you have 8 comparisons, bonferroni correction = alpha/# of comparisons or .00625). Qnorm gives you the 1 tailed value for your corrected confidence interval (meaning you need to divide .00625/2 and then subtract that value from 1). You then multiply the value from qnorm * SE and that is bonferroni corrected CI.
+
+#### Bonferroni correction factor
+qnorm(0.996875) #2.734
+
+#### Save the output as a df for plotting
+wi.s.output <- data.frame(wi.s$avail.prop, wi.s$used.prop, wi.s$wi, wi.s$se.wi)
+
+#### Rename column heads
+wi.s.output <- wi.s.output %>%
+  rename(Available = wi.s.avail.prop, Used = wi.s.used.prop, Wi = wi.s.wi, SE = wi.s.se.wi)
+
+#### Add CI and Bonf.CI
+wi.s.output$CI <- wi.s.output$SE*1.96
+wi.s.output$Bonf.CI <- wi.s.output$SE*2.734
+
+#### Move row names to be a row instead since they're currently treesp
+wi.s.output <- tibble::rownames_to_column(wi.s.output, "Treesp")
+
+#### Add season. Enables me to merge the two output dfs into 1 for graphing
+wi.s.output <- wi.s.output %>%
+  mutate(Season = "Summer", .after = "Treesp")
+
+### Winter
+fdd.wide.w <- fdd.wide %>%
+  filter(Season == "Winter")
+
+#### Values for the whole summer "population"
+fdd.wide.w.colsums <- apply(fdd.wide.w[,3:10], 2, sum)
+  
+#### Using adehabitat hs to run a type I (population level) analysis of preference
+(wi.w <- widesI(fdd.wide.w.colsums, treesp.avail, avknown = TRUE, alpha = 0.05))
+
+#### Save the output as a df for plotting
+wi.w.output <- data.frame(wi.w$avail.prop, wi.w$used.prop, wi.w$wi, wi.w$se.wi)
+
+#### Rename column heads
+wi.w.output <- wi.w.output %>%
+  rename(Available = wi.w.avail.prop, Used = wi.w.used.prop, Wi = wi.w.wi, SE = wi.w.se.wi)
+
+#### Add CI and Bonf.CI
+wi.w.output$CI <- wi.w.output$SE*1.96
+wi.w.output$Bonf.CI <- wi.w.output$SE*2.734
+
+#### Move row names to be a row instead since they're currently treesp
+wi.w.output <- tibble::rownames_to_column(wi.w.output, "Treesp")
+
+#### Add season. Enables me to merge the two output dfs into 1 for graphing
+wi.w.output <- wi.w.output %>%
+  mutate(Season = "Winter", .after = "Treesp")
+
+
+### Merge the 2 df
+wi.full.output <- rbind(wi.s.output, wi.w.output)
+
+
+## Plotting Wi
+
+### Format for ggplot that I like
+plot.format <- theme(axis.text.x = element_text(size=12),axis.text.y = element_text(size=12),
+  axis.title.x = element_blank(),axis.title.y = element_text(size=13),
+  panel.background = element_blank(), panel.border = element_blank(),
+  panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+  axis.line = element_line(colour = "black"))
+
+ylabel <- expression(paste("Manly's selection ratio (", italic("w"["i"]), ")"))
+  
+### Preference plot of Wi for both seasons
+Wi.plot <- ggplot(data=wi.full.output, aes(x = Treesp, y = Wi, group = Season, fill = Season)) +
+  geom_bar(stat = "identity", position = position_dodge(.9))+
+  geom_errorbar(aes(ymin= ifelse(Wi-Bonf.CI < 0.00, 0.01, Wi-Bonf.CI), ymax=Wi+Bonf.CI), width=.2, position=position_dodge(.9))+ 
+  geom_hline(yintercept=1.0, color = "#9E2024", size=1)+
+  scale_fill_manual("Season", values = c("Summer" = "#666666", "Winter" = "#cccccc"))+
+  plot.format+
+  ylab(ylabel)+
+  scale_x_discrete(labels = c("A. elm", "B. willow", "E. hemlock",  "E. redcedar", "S. maple", "W. ash", "W. oak", "W. pine"))+
+  scale_y_continuous(expand = c(0, 0))+
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+
+#ggsave("C:/Users/mwuen/Documents/R/CH2_Cafe_Study/preference.png", Wi.plot, height = 4, width = 5.2, units = "in", dpi = 500)
+
+```
+###### Chunk 2, dbRDA of nutrients in response to tree species
+```{r}
+###### Chunk 2, dbRDA of nutrients in response to tree species ######
+library(vegan)
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(cowplot)
+library(ggpubr)
+library(patchwork)
+library(plotrix)
+library(forcats)
+nutrient.dat <- read.csv("C:/Users/mwuen/Documents/R/CH2_Cafe_Study/Full.chemical.2.csv")
+#View(nutrient.dat)
+nutrient.dat$Species <- as.factor(nutrient.dat$Species)
+nutrient.dat$Season <- as.factor(nutrient.dat$Season)
+nutrient.dat$C.P.perc <- (nutrient.dat$C.P.perc/100)
+nutrient.dat$Preference <- as.factor(nutrient.dat$Preference)
+
+# Replace tannin values of 0 half of minimum detection limit (.000820560/2)
+nutrient.dat["TAE.mg.ml"][nutrient.dat["TAE.mg.ml"] == 0] <- 0.00041028
+#View(nutrient.dat)
+nutrient.dat$TAE.mg.ml <- (nutrient.dat$TAE.mg.ml*4)
+
+      ### SUMMER DBRDA ###
+nut.dat.sum <- nutrient.dat %>%
+  filter(Season == "summer")
+
+# Subsetting your nutrient df into nutrient and environment data.
+nutrients.sum = nut.dat.sum[c(5:7,10)] 
+environments.sum = nut.dat.sum[,2:4]
+
+# Distance based RDA using dbrda function (McArdle & Anderson 2001) with bray curtis dissimilarity as the distance. ### Maybe do condition species, maybe not? this is odd, Maybe fully drop dbRDA for RDA. Coinertia analysis. see mason et al 2020. 
+nutrient.db.rda.sum <- dbrda(nutrients.sum ~ Species, environments.sum, distance = "bray")
+
+# Obtain p-value for model significance.
+anova(nutrient.db.rda.sum, by = "term") 
+
+# Obtain adjusted R-squared value. 0.6452
+RsquareAdj(nutrient.db.rda.sum)
+
+# Obtaining output classes from dbRDA.
+class(nutrient.db.rda.sum)
+
+#Having output provide spp scores
+sppscores(nutrient.db.rda.sum) <- sqrt(decostand(nutrients.sum, "total"))
+
+# Summary scores of dbRDA.
+summary(nutrient.db.rda.sum) #69.12% of the variance in this modeled ws explained by the constraining variables and 30.88% of the variance was unconstrained, meaning it cannot be explained by preference or species. Of the constrained variance, dbRDA1 explained 40.86% of total variance and dbRDA2 explained 18.69% of total variance
+
+#All eigenvalues of dbRDA and then percent variance explained by each axis.
+eigenvals(nutrient.db.rda.sum)
+eigenvals(nutrient.db.rda.sum)/sum(eigenvals(nutrient.db.rda.sum))
+
+# Extracting coefficients from dbRDA and adding to original df and creating new df.
+dbRDA.data.sum <- cbind(nut.dat.sum, scores(nutrient.db.rda.sum, choices = c(1:3), display = "sites"))
+
+# % var explained by each ordination axis as an object. Use these numbers in the axis labels.
+dbRDA.var.sum <- eigenvals(nutrient.db.rda.sum)/sum(eigenvals(nutrient.db.rda.sum)) 
+
+# Scores for nutrients and preference incase I would like to overlay those
+scores.sum <- scores(nutrient.db.rda.sum, choices = c(1:3))
+
+# species scores
+sppscores.sum <- data.frame(scores.sum$species)
+
+# Clean up and organize sppscore df
+sppscores.sum$compound <- rownames(sppscores.sum)
+sppscores.sum$compound <- as.factor(sppscores.sum$compound)
+rownames(sppscores.sum) <- NULL
+sppscores.sum <- sppscores.sum %>%
+  relocate(compound, .before = dbRDA1)
+
+# Grab centroids for each tree species
+tree.cent <- data.frame(scores.sum$centroids)
+
+# tree.cent up and organize centroid df
+tree.cent$Species <- rownames(tree.cent)
+tree.cent$Species <- as.factor(tree.cent$Species)
+rownames(tree.cent) <- NULL
+tree.cent <- tree.cent %>%
+  relocate(Species, .before = dbRDA1)
+
+#Rename compounds
+levels(sppscores.sum$compound) <- list(CP = "C.P.perc", GAE = "GAE.mg.ml", TAE = "TAE.mg.ml", TNC = "TNC.mg.ml")
+
+# Rename tree species
+levels(tree.cent$Species) <- list(Acsa = "SpeciesAcsa", Fram = "SpeciesFram", Juvi = "SpeciesJuvi", Pist = "SpeciesPist", Qual = "SpeciesQual", Sani = "SpeciesSani", Tsca = "SpeciesTsca", Ulam = "SpeciesUlam")
+
+
+# Theme that I use for ordinations
+theme_PCA <- theme_classic() + # Classic theme with white background.
+		theme(aspect.ratio = 1, axis.title = (element_text(size = 10)), legend.title = element_text(face = "bold", size = 9), legend.text = element_text(size = 8), text = element_text(size = 10)) # Adjust plot and legend margins; bold titles.
+
+cbPalette <- c("#386EC2", "#59710D", "#e3bb4b", "#8A1907", "#A9AEB3", "#213958", "#e99696", "white")
+
+# Recode factor level of "avoided" to be "non-preferred" as reviewers suggested
+dbRDA.data.sum <- dbRDA.data.sum %>%
+  mutate(Preference = fct_recode(Preference, "non-preferred" = "avoided"))
+
+# Plot of dbRDA1 VS DBRDA2.  
+nut.rda.plot.sum.1.2 <- ggplot(data = dbRDA.data.sum, aes(x = dbRDA1 , y = dbRDA2)) + 
+  theme_PCA + 
+  geom_point(data = dbRDA.data.sum, aes(fill = Species, shape = Preference), size = 2.5, alpha =.8) +
+  labs(data = dbRDA.data.sum, x = "dbRDA1 (40.86%)", y = "dbRDA2 (16.57%)", color = "Species", shape = "Preference") +
+  ylim(min(dbRDA.data.sum$dbRDA2), max(dbRDA.data.sum$dbRDA2)) +
+  xlim(min(dbRDA.data.sum$dbRDA1)*1.35, max(dbRDA.data.sum$dbRDA1)*1.25) +
+  scale_shape_manual(values = c(21,23,24)) +
+  scale_fill_manual(labels = c("S. maple", "W. ash", "E. redcedar", "W. pine", "W. oak", "B. willow", "E. hemlock", "A. elm"), values = cbPalette) +
+  guides(size = "none", fill = guide_legend(override.aes=list(shape=21), shape = guide_legend(ncol = 2))) + 
+  geom_segment(aes(x = 0, y = 0, xend = dbRDA1, yend = dbRDA2), data = sppscores.sum, size = 0.8, alpha = 0.75, colour = "grey30") +
+  geom_text(data = sppscores.sum, aes(x = dbRDA1, y = dbRDA2, label = compound, fontface = "bold"), size = 3.5)+
+  guides(shape = guide_legend(nrow = 2))
+
+# Plot of dbRDA1 VS DBRDA3. 
+nut.rda.plot.sum.1.3 <- ggplot(data = dbRDA.data.sum, aes(x = dbRDA1 , y = dbRDA3)) + 
+  theme_PCA + 
+  geom_point(data = dbRDA.data.sum, aes(fill = Species, shape = Preference), size = 2.5, alpha =.8) +
+  labs(data = dbRDA.data.sum, x = "dbRDA1 (40.86%)", y = "dbRDA3 (11.46%)", color = "Species", shape = "Preference") +
+  ylim(min(dbRDA.data.sum$dbRDA3), max(dbRDA.data.sum$dbRDA3)) +
+  xlim(min(dbRDA.data.sum$dbRDA1)*1.35, max(dbRDA.data.sum$dbRDA1)*1.25) +
+  scale_shape_manual(values = c(21,23,24)) +
+  scale_fill_manual(labels = c("S. maple", "W. ash", "E. redcedar", "W. pine", "W. oak", "B. willow", "E. hemlock", "A. elm"), values = cbPalette) +
+  guides(size = "none", fill = guide_legend(override.aes=list(shape=21), shape = guide_legend(ncol = 2))) + 
+  geom_segment(aes(x = 0, y = 0, xend = dbRDA1, yend = dbRDA3), data = sppscores.sum, size = 0.8, alpha = 0.75, colour = "grey30") +
+  geom_text(data = sppscores.sum, aes(x = dbRDA1, y = dbRDA3, label = compound, fontface = "bold"), size = 3.5)+
+  guides(shape = guide_legend(nrow = 2))
+
+# Plot of dbRDA2 VS DBRDA3. 
+nut.rda.plot.sum.2.3 <- ggplot(data = dbRDA.data.sum, aes(x = dbRDA2 , y = dbRDA3)) + 
+  theme_PCA + 
+  geom_point(data = dbRDA.data.sum, aes(fill = Species, shape = Preference), size = 2.5, alpha =.8) +
+  labs(data = dbRDA.data.sum, x = "dbRDA2 (16.57%)", y = "dbRDA3 (11.46%)", color = "Species", shape = "Preference") +
+  ylim(min(dbRDA.data.sum$dbRDA3), max(dbRDA.data.sum$dbRDA3)) +
+  xlim(min(dbRDA.data.sum$dbRDA2), max(dbRDA.data.sum$dbRDA2*1.1)) +
+  scale_shape_manual(values = c(21,23,24)) +
+  scale_fill_manual(labels = c("S. maple", "W. ash", "E. redcedar", "W. pine", "W. oak", "B. willow", "E. hemlock", "A. elm"), values = cbPalette) +
+  guides(size = "none", fill = guide_legend(override.aes=list(shape=21), shape = guide_legend(ncol = 2))) + 
+  geom_segment(aes(x = 0, y = 0, xend = dbRDA2, yend = dbRDA3), data = sppscores.sum, size = 0.8 , alpha = 0.75, colour = "grey30") +
+  geom_text(data = sppscores.sum, aes(x = dbRDA2, y = dbRDA3, label = compound, fontface = "bold"), size = 3.5)+
+  guides(shape = guide_legend(nrow = 2))
+
+
+      ### WINTER DBRDA ###
+nut.dat.win <- nutrient.dat %>%
+  filter(Season == "winter")
+#View(nut.dat.win)
+
+# Subsetting your nutrient df into nutrient and environment data.
+nutrients.win = nut.dat.win[c(5:7,10)] 
+environments.win = nut.dat.win[,2:4]
+
+# Distance based RDA using dbrda function (McArdle & Anderson 2001) with bray curtis dissimilarity as the distance.
+nutrient.db.rda.win <- dbrda(nutrients.win ~ Species, environments.win, distance = "bray")
+
+# Obtain p-value for model significance.
+anova(nutrient.db.rda.win, by = "term") 
+
+# Obtain adjusted R-squared value. .6035
+RsquareAdj(nutrient.db.rda.win)
+
+# Obtaining output classes from dbRDA.
+class(nutrient.db.rda.win)
+
+#Having output provide spp scores
+sppscores(nutrient.db.rda.win) <- sqrt(decostand(nutrients.win, "total"))
+
+# Summary scores of dbRDA.
+summary(nutrient.db.rda.win) #65.59% of the variance in this modeled ws explained by the constraining variables and 34.41% of the variance was unconstrained, meaning it cannot be explained by preference or species. Of the constrained variance, dbRDA1 explained 47.66% of total variance and dbRDA2 explained 15.26% of total variance
+
+#All eigenvalues of dbRDA and then percent variance explained by each axis.
+eigenvals(nutrient.db.rda.win)
+eigenvals(nutrient.db.rda.win)/sum(eigenvals(nutrient.db.rda.win))
+
+# Extracting coefficients from dbRDA and adding to original df and creating new df.
+dbRDA.data.win <- cbind(nut.dat.win, scores(nutrient.db.rda.win, choices = c(1:3), display = "sites"))
+
+# % var explained by each ordination axis as an object. Use these numbers in the axis labels.
+dbRDA.var.win <- eigenvals(nutrient.db.rda.win)/sum(eigenvals(nutrient.db.rda.win)) 
+
+# Obtaining and cleaning species scores
+scores.win <- scores(nutrient.db.rda.win, choices = c(1:3))
+sppscores.win <- data.frame(scores.win$species)
+
+# Clean up and organize sppscore df
+sppscores.win$compound <- rownames(sppscores.win)
+sppscores.win$compound <- as.factor(sppscores.win$compound)
+rownames(sppscores.win) <- NULL
+sppscores.win <- sppscores.win %>%
+  relocate(compound, .before = dbRDA1)
+
+#Rename compounds
+levels(sppscores.win$compound) <- list(CP = "C.P.perc", GAE = "GAE.mg.ml", TAE = "TAE.mg.ml", TNC = "TNC.mg.ml")
+
+# Rename avoided
+dbRDA.data.win <- dbRDA.data.win %>%
+  mutate(Preference = fct_recode(Preference, "non-preferred" = "avoided"))
+
+# winter Plot of dbRDA1 VS DBRDA2.  
+nut.rda.plot.win.1.2 <- ggplot(data = dbRDA.data.win, aes(x = dbRDA1 , y = dbRDA2)) + 
+  theme_PCA + 
+  geom_point(data = dbRDA.data.win, aes(fill = Species, shape = Preference), size = 2.5, alpha =.8) +
+  labs(data = dbRDA.data.win, x = "dbRDA1 (47.66%)", y = "dbRDA2 (15.26%)", color = "Species", shape = "Preference") +
+  ylim(min(dbRDA.data.win$dbRDA2), max(dbRDA.data.win$dbRDA2)) +
+  xlim(min(dbRDA.data.win$dbRDA1)*1.6, max(dbRDA.data.win$dbRDA1)*1.65) +
+  scale_shape_manual(values = c(21,23,24)) +
+  scale_fill_manual(labels = c("S. maple", "W. ash", "E. redcedar", "W. pine", "W. oak", "B. willow", "E. hemlock", "A. elm"), values = cbPalette) +
+  guides(size = "none", fill = guide_legend(override.aes=list(shape=21), shape = guide_legend(ncol = 2))) + 
+  geom_segment(aes(x = 0, y = 0, xend = dbRDA1, yend = dbRDA2), data = sppscores.win, size = .8, alpha = 0.75, colour = "grey30") +
+  geom_text(data = sppscores.win, aes(x = dbRDA1, y = dbRDA2, label = compound, fontface = "bold"), size = 3.5)+
+  guides(shape = guide_legend(nrow = 2))
+
+# Plot of dbRDA1 VS DBRDA3. 
+nut.rda.plot.win.1.3 <- ggplot(data = dbRDA.data.win, aes(x = dbRDA1 , y = dbRDA3)) + 
+  theme_PCA + 
+  geom_point(data = dbRDA.data.win, aes(fill = Species, shape = Preference), size = 2.5, alpha =.8) +
+  labs(data = dbRDA.data.win, x = "dbRDA1 (47.66%)", y = "dbRDA3 (2.26%)", color = "Species", shape = "Preference") +
+  ylim(min(dbRDA.data.win$dbRDA3), max(dbRDA.data.win$dbRDA3)) +
+  xlim(min(dbRDA.data.win$dbRDA1)*1.6, max(dbRDA.data.win$dbRDA1)*1.65) +
+  scale_shape_manual(values = c(21,23,24)) +
+  scale_fill_manual(labels = c("S. maple", "W. ash", "E. redcedar", "W. pine", "W. oak", "B. willow", "E. hemlock", "A. elm"), values = cbPalette) +
+  guides(size = "none", fill = guide_legend(override.aes=list(shape=21), shape = guide_legend(ncol = 2))) + 
+  geom_segment(aes(x = 0, y = 0, xend = dbRDA1, yend = dbRDA3), data = sppscores.win, size =.8, alpha = 0.75, colour = "grey30") +
+  geom_text(data = sppscores.win, aes(x = dbRDA1, y = dbRDA3, label = compound, fontface = "bold"), size = 3.5)+
+  guides(shape = guide_legend(nrow = 2))
+
+# Plot of dbRDA2 VS DBRDA3. 
+nut.rda.plot.win.2.3 <- ggplot(data = dbRDA.data.win, aes(x = dbRDA2 , y = dbRDA3)) + 
+  theme_PCA + 
+  geom_point(data = dbRDA.data.win, aes(fill = Species, shape = Preference), size = 2.5, alpha =.8) +
+  labs(data = dbRDA.data.win, x = "dbRDA2 (15.26%)", y = "dbRDA3 (2.26%)", color = "Species", shape = "Preference") +
+  ylim(min(dbRDA.data.win$dbRDA3), max(dbRDA.data.win$dbRDA3)) +
+  xlim(min(dbRDA.data.win$dbRDA2), max(dbRDA.data.win$dbRDA2)) +
+  scale_shape_manual(values = c(21,23,24)) +
+  scale_fill_manual(labels = c("S. maple", "W. ash", "E. redcedar", "W. pine", "W. oak", "B. willow", "E. hemlock", "A. elm"), values = cbPalette) +
+  guides(size = "none", fill = guide_legend(override.aes=list(shape=21), shape = guide_legend(ncol = 2))) + 
+  geom_segment(aes(x = 0, y = 0, xend = dbRDA2, yend = dbRDA3), data = sppscores.win, size =.8, alpha = 0.75, colour = "grey30") +
+  geom_text(data = sppscores.win, aes(x = dbRDA2, y = dbRDA3, label = compound, fontface = "bold"), size = 3.5)+
+  guides(shape = guide_legend(nrow = 2))
+
+
+## Stitch together summer and winter plots and add a legend
+
+#Extract legend
+leg <- get_legend(nut.rda.plot.sum.1.2)
+leg <- as_ggplot(leg)
+
+#Add A & B to each figure
+#nut.rda.plot.sum.1.2 <- nut.rda.plot.sum.1.2 + geom_text(x = -1, y = 1, label ="A", size = 7)
+#nut.rda.plot.win.1.2 <- nut.rda.plot.win.1.2 + geom_text(x = -1, y = 1, label ="B", size = 7)
+
+combined.plot <- (nut.rda.plot.sum.1.2/nut.rda.plot.win.1.2/nut.rda.plot.sum.1.3/nut.rda.plot.win.1.3/nut.rda.plot.sum.2.3/nut.rda.plot.win.2.3) + plot_layout(ncol = 2) + plot_layout(guides = "collect")& theme(legend.position = "top")
+
+
+combined.nutrient.plot <- combined.plot# + inset_element(leg,left = 0.0, bottom = 1.5, right = 2.5, top = 0.5, on_top = FALSE, align_to = 'full')
+dev.new()
+combined.nutrient.plot
+
+#ggsave("C:/Users/mwuen/Documents/R/CH2_Cafe_Study/nutrients.8.6.png", combined.nutrient.plot, height =6.5, width = 6.5, units = "in", dpi = 500)
+
+
+# Splitting nutrient dbrda plot into 1 figure for each season
+combined.plot.summer <- (nut.rda.plot.sum.1.2/nut.rda.plot.sum.1.3/nut.rda.plot.sum.2.3) + plot_layout(ncol = 3) + plot_layout(guides = "collect")& theme(legend.position = "bottom")
+
+combined.plot.winter <- (nut.rda.plot.win.1.2/nut.rda.plot.win.1.3/nut.rda.plot.win.2.3) + plot_layout(ncol = 3) + plot_layout(guides = "collect")& theme(legend.position = "bottom")
+
+# Saving season plots
+ggsave("C:/Users/mwuen/Documents/R/CH2_Cafe_Study/nutrients.summer.png", combined.plot.summer, height =4, width = 7.35, units = "in", dpi = 500)
+
+ggsave("C:/Users/mwuen/Documents/R/CH2_Cafe_Study/nutrients.winter.png", combined.plot.winter, height =4, width = 7.35, units = "in", dpi = 500)
+```
+#Chunk 3, running multinomial logistic regression examining preference ~ nutrients, and nbinom of bites ~ nutrients.
+```{r}
+#### Chunk 3, regression analyses after RDAs ####
+library(emmeans)
+library(lme4)
+library(lmerTest)
+library(glmmTMB)
+library(ggplot2)
+library(multcomp)
+library(patchwork)
+library(dplyr)
+library(nnet)
+
+# multinomial regressions to analyze how preference categories vary in response to nutrients
+sum.multinom <- multinom(Preference ~ TNC.mg.ml+GAE.mg.ml+C.P.perc+TAE.mg.ml, data = nut.dat.sum)
+win.multinom <- multinom(Preference ~ TNC.mg.ml+GAE.mg.ml+C.P.perc+TAE.mg.ml, data = nut.dat.win)
+
+# Using LRT to test for whether the addition of each variable significantly improves the model
+car::Anova(sum.multinom, type = 3)
+car::Anova(win.multinom, type = 3)
+
+### nbinom mods and figures ###
+forage.dat.test <- read.csv("C:/Users/mwuen/Documents/R/CH2_Cafe_Study/WTD.forage.csv")
+nutrient.dat <- read.csv("C:/Users/mwuen/Documents/R/CH2_Cafe_Study/Full.chemical.2.csv")
+nutrient.dat.2 <- read.csv("C:/Users/mwuen/Documents/R/CH2_Cafe_Study/updated.nutrients.csv")
+
+# merge nutrient.dat by treesp and trial.date
+for.nut.df <- forage.dat.test %>%
+  left_join(nutrient.dat.2, by = c("treesp", "trial.date", "Season"))
+
+# remove unneeded columns
+fn.df.2 <- for.nut.df %>%
+  dplyr::select(-c(14:20))
+
+### Filter to just summer
+fn.df.sum <- fn.df.2 %>%
+  filter(Season == "Summer")
+
+# Summer negative binomial regression of the factors that significantly influenced preference
+summer.bite.mod <- glmmTMB(bites ~ TNC.mg.ml + C.P.perc + GAE.mg.ml +  (1|deer), family = "nbinom2", data = fn.df.sum)
+summary(summer.bite.mod)
+hist(resid(summer.bite.mod))
+
+
+
+### Filter to just winter
+fn.df.win <- fn.df.2 %>%
+  filter(Season == "Winter")
+
+# Winter negative binomial regression of the factors that significantly influenced preference
+winter.bite.mod <- glmmTMB(bites ~ TNC.mg.ml + C.P.perc + GAE.mg.ml +  (1|deer), family = "nbinom2", data = fn.df.win)
+summary(winter.bite.mod)
+hist(resid(winter.bite.mod))
+
+  
+
+### Plotting
+# Plot theme
+plot.format.2 <- theme(axis.text.x = element_text(size=8),axis.text.y = element_text(size=8),
+  axis.title.x = element_text(size=10),axis.title.y = element_text(size=10),
+  panel.background = element_blank(), panel.border = element_blank(),
+  panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+  axis.line = element_line(colour = "black"))
+
+#### TNC, summer
+# Pull emmeans object. Cut off at around 26 bites. This is when se = 1/2 response value
+tnc.sum.ee <- ee <- emmeans(summer.bite.mod, ~TNC.mg.ml,
+       at = list(TNC.mg.ml = seq(min(fn.df.sum$TNC.mg.ml, na.rm = T), max(0.6), length = 100)), 
+       type = "response")
+
+# Build the plot
+dev.new()
+tnc.sum.plot <- ggplot(as.data.frame(tnc.sum.ee), aes(TNC.mg.ml, response)) +
+    geom_line(color = "#666666", size = 1.15) +
+  geom_ribbon(aes(ymin = lower.CL, ymax = upper.CL), 
+                colour = "#666666", alpha = 0.3) +
+  plot.format.2 +
+  ylab("Bites") +
+  xlab("TNC (mg/mL)")
+
+#### TNC, winter
+# Pull emmeans object. Cut off at around 26 bites. This is when se = 1/2 response value
+tnc.win.ee <- ee <- emmeans(winter.bite.mod, ~TNC.mg.ml,
+       at = list(TNC.mg.ml = seq(min(fn.df.win$TNC.mg.ml, na.rm = T), max(0.6), length = 100)), 
+       type = "response")
+
+# Build the plot
+tnc.win.plot <- ggplot(as.data.frame(tnc.win.ee), aes(TNC.mg.ml, response)) +
+    geom_line(color = "#cccccc", size = 1.15) +
+  geom_ribbon(aes(ymin = lower.CL, ymax = upper.CL), 
+                colour = "#cccccc", alpha = 0.1) +
+  plot.format.2 +
+  ylab("Bites") +
+  xlab("TNC (mg/mL)")
+
+
+
+#### Crude protein, summer
+# Pull emmeans object. Cut off at around 25 bites. This is when se = 2/3 response value
+cp.sum.ee <- ee <- emmeans(summer.bite.mod, ~C.P.perc,
+       at = list(C.P.perc = seq(min(fn.df.sum$C.P.perc, na.rm = T), max(25), length = 100)), 
+       type = "response")
+
+# Build the plot
+cp.sum.plot <- ggplot(as.data.frame(cp.sum.ee), aes(C.P.perc, response)) +
+    geom_line(color = "#666666", size = 1.15) +
+  geom_ribbon(aes(ymin = lower.CL, ymax = upper.CL), 
+                colour = "#666666", alpha = 0.3) +
+  plot.format.2 +
+  ylab("Bites") +
+  xlab("Crude protein (%)")
+
+#### Crude protein, winter
+# Pull emmeans object. Cut off at around 25 bites. This is when se = 1/2 response value
+cp.win.ee <- ee <- emmeans(winter.bite.mod, ~C.P.perc,
+       at = list(C.P.perc = seq(min(fn.df.sum$C.P.perc, na.rm = T), max(26), length = 100)), 
+       type = "response")
+
+# Build the plot
+cp.win.plot <- ggplot(as.data.frame(cp.win.ee), aes(C.P.perc, response)) +
+    geom_line(color = "#cccccc", size = 1.15) +
+  geom_ribbon(aes(ymin = lower.CL, ymax = upper.CL), 
+                colour = "#cccccc", alpha = 0.1) +
+  plot.format.2 +
+  ylab("Bites") +
+  xlab("Crude protein (%)")
+
+
+
+#### TAE, summer
+# Pull emmeans object. Cut off at around 25 bites. This is when se = 2/3 response value
+gae.sum.ee <- ee <- emmeans(summer.bite.mod, ~GAE.mg.ml,
+       at = list(GAE.mg.ml = seq(min(fn.df.sum$GAE.mg.ml, na.rm = T), max(fn.df.sum$GAE.mg.ml, na.rm = T), length = 100)), 
+       type = "response")
+
+# Build the plot
+gae.sum.plot <- ggplot(as.data.frame(gae.sum.ee), aes(GAE.mg.ml, response)) +
+    geom_line(color = "#666666", size = 1.15) +
+  geom_ribbon(aes(ymin = lower.CL, ymax = upper.CL), 
+                colour = "#666666", alpha = 0.3) +
+  plot.format.2 +
+  ylab("Bites") +
+  xlab("GAE (mg/mL)")
+
+#### TAE, winter
+# Pull emmeans object. Cut off at around 26 bites. This is when se = 1/2 response value
+gae.win.ee <- ee <- emmeans(winter.bite.mod, ~GAE.mg.ml,
+       at = list(GAE.mg.ml = seq(min(fn.df.win$GAE.mg.ml, na.rm = T), max(fn.df.win$GAE.mg.ml, na.rm = T), length = 100)), 
+       type = "response")
+
+# Build the plot
+gae.win.plot <- ggplot(as.data.frame(gae.win.ee), aes(GAE.mg.ml, response)) +
+    geom_line(color = "#cccccc", size = 1.15) +
+  geom_ribbon(aes(ymin = lower.CL, ymax = upper.CL), 
+                colour = "#cccccc", alpha = 0.1) +
+  plot.format.2 +
+  ylab("Bites") +
+  xlab("GAE (mg/mL)") +
+  scale_x_continuous(labels=c("0.0000" = "0.0", "0.0005" = "5.0E-4",
+                              "0.0010" = "1.0E-3", "0.0015" = "1.5E-3", "0.0020" = "2.0E-3"))
+
+# Cleanup plots for what you need in the patchwork object
+tnc.sum.plot <- tnc.sum.plot + theme(axis.title.x = element_blank()) + scale_y_continuous(breaks = c(0, 20, 40, 60)) + scale_x_continuous(breaks = c(0.1, 0.2, 0.3, 0.4, 0.5), limits = c(0.1, 0.5)) + 
+  coord_cartesian(ylim = c(0, 60), xlim = c(0.1, 0.5)) +
+  geom_text(aes( x = 0.3, y = 50), label = "*p = 0.002", stat = "unique", size = 2.5) +
+  geom_text(aes( x = 0.17, y = 58), label = "Summer", stat = "unique", size = 3, fontface = "bold")
+
+cp.sum.plot <- cp.sum.plot  + theme(axis.title.x = element_blank(), axis.title.y = element_blank()) + scale_y_continuous(breaks = c(0, 20, 40, 60), limits = c(0, 60)) +
+  geom_text(aes( x = 17.5, y = 50), label = "*p = 0.035", stat = "unique", size = 2.5)
+
+gae.sum.plot <- gae.sum.plot  + theme(axis.title.x = element_blank(), axis.title.y = element_blank()) + scale_y_continuous(breaks = c(0, 20, 40, 60), limits = c(0, 60)) + 
+  scale_x_continuous(breaks = c(0.0167, 0.04, 0.06, 0.08, 0.1, 0.118), labels=c("0.0167" = "0.2", "0.04" = "0.04", "0.06" = "0.06", "0.08" = "0.08", "0.1" = "0.1", "0.118" = "0.12")) + 
+  coord_cartesian(ylim = c(0, 60), xlim = c(0.01, 0.12)) +
+  geom_text(aes( x = 0.07, y = 50), label = "p = 0.403", stat = "unique", size = 2.5)
+
+tnc.win.plot <- tnc.win.plot  + scale_y_continuous(breaks = c(0, 5, 10, 15), limits = c(0, 15)) + scale_x_continuous(breaks = c(0.1, 0.2, 0.3, 0.4, 0.5), limits = c(0.1, 0.5)) +
+  coord_cartesian(ylim = c(0, 10), xlim = c(0.1, 0.5)) +
+  geom_text(aes( x = 0.3, y = 8), label = "p = 0.325", stat = "unique", size = 2.5) +
+  geom_text(aes( x = 0.17, y = 9), label = "Winter", stat = "unique", size = 3, fontface = "bold")
+
+cp.win.plot <- cp.win.plot  + theme(axis.title.y = element_blank()) + scale_y_continuous(breaks = c(0, 5, 10, 15), limits = c(0, 10)) +
+  geom_text(aes( x = 17.5, y = 8), label = "*p < 0.001", stat = "unique", size = 2.5)
+
+gae.win.plot <- gae.win.plot  + theme(axis.title.y = element_blank()) + scale_y_continuous(breaks = c(0, 5, 10, 15)) + 
+  scale_x_continuous(breaks = c(0.0167, 0.04, 0.06, 0.08, 0.1, 0.118), labels=c("0.0167" = "0.2", "0.04" = "0.04", "0.06" = "0.06", "0.08" = "0.08", "0.1" = "0.1", "0.118" = "0.12")) + 
+  coord_cartesian(ylim = c(0, 10), xlim = c(0.01, 0.12)) +
+  geom_text(aes( x = 0.07, y = 8), label = "*p = 0.005", stat = "unique", size = 2.5)
+
+
+
+patchwork.obj <- tnc.sum.plot + cp.sum.plot + gae.sum.plot + tnc.win.plot + cp.win.plot + gae.win.plot + plot_layout(nrow = 2)
+
+#ggsave("C:/Users/mwuen/Documents/R/CH2_Cafe_Study/oeco_figure.png", patchwork.obj, height = 4.5, width =6.5, dpi = 500)
+```
+# Chunk 4, Acceptability ratios
+```{r}
+library(plotrix)
+### These analyses won't be included in manuscript but could be supplementary if reviewers ask for it.
+# direct test of sniffing time in relation to species. So lm(sniffing time ~ species +(1|Deerid))
+# add in an offset term 
+pref.df <- data.frame(treesp = c("AELM","BWIL","EHEM","ERCD","SMAP","WASH","WOAK","WPIN"), 
+                        pref.cat = c("preferred", "preferred", "avoided", "avoided","avoided","neutral","neutral","avoided"))
+
+fn.df.sum2 <- merge(fn.df.sum, pref.df, by = c("treesp"))
+
+# Pull outlier 
+
+sniff.mod.sum <- glmmTMB(s.duration.s. ~  treesp + (1|deer), data = fn.df.sum2, family = "nbinom2")
+summary(sniff.mod.sum) 
+car::Anova(sniff.mod.sum, type = 3)
+qqnorm(resid(sniff.mod.sum))
+qqline(resid(sniff.mod.sum))
+hist(resid(sniff.mod.sum))
+obja <- emmeans(sniff.mod.sum, ~treesp, type = "response")
+
+cld(obja,
+    adjust = "Tukey",
+    Letters = letters,
+    alpha = 0.05)
+hist(resid(sniff.mod.sum))
+
+sniff.mod.sum.pref <- glmmTMB(s.duration.s. ~  pref.cat + (1|deer), data = fn.df.sum2, family = "nbinom2")
+summary(sniff.mod.sum.pref) 
+car::Anova(sniff.mod.sum.pref, type = 3)
+qqnorm(resid(sniff.mod.sum))
+qqline(resid(sniff.mod.sum))
+rg <- ref_grid(sniff.mod.sum.pref)
+obja <- emmeans(rg, "pref.cat", type = "response")
+test(obja)
+obja <- emmeans(sniff.mod.sum.pref, pairwise ~pref.cat, type = "response")
+
+objb <- pairs(emmeans(sniff.mod.sum, ~ treesp))
+
+#### Calculating acceptability ratios ####
+forage.dat.test <- read.csv("C:/Users/mwuen/Documents/R/CH2_Cafe_Study/WTD.forage.csv")
+nutrient.dat <- read.csv("C:/Users/mwuen/Documents/R/CH2_Cafe_Study/Full.chemical.2.csv")
+nutrient.dat.2 <- read.csv("C:/Users/mwuen/Documents/R/CH2_Cafe_Study/updated.nutrients.csv")
+
+# merge nutrient.dat by treesp and trial.date
+for.nut.df <- forage.dat.test %>%
+  left_join(nutrient.dat.2, by = c("treesp", "trial.date", "Season"))
+
+# remove unneeded columns
+fn.df.2 <- for.nut.df %>%
+  dplyr::select(-c(14:20))
+
+### Filter to just summer
+fn.df.sum <- fn.df.2 %>%
+  filter(Season == "Summer")
+
+
+### Filter to just winter
+fn.df.win <- fn.df.2 %>%
+  filter(Season == "Winter")
+
+# Only sniffing encounters
+fn.df.sum.red <- fn.df.sum %>%
+  filter(!sniff == "no")
+
+
+fn.df.win.red <- fn.df.win %>%
+  filter(!sniff == "no")
+
+
+# Calculate individual AI (as you did originally) for all species for each deer
+### summarise the number of forage encounters and total encounters for each species, by each deer
+ai.summary.sum <- fn.df.sum.red %>%
+  group_by(treesp, deer) %>%
+  count(forage)
+
+### Rearrange the summary
+ai.summary.sum <- spread(ai.summary.sum, forage, n, is.na(0))
+ai.summary.sum$total <- ai.summary.sum$no + ai.summary.sum$yes
+ai.summary.sum$ai <- (ai.summary.sum$yes/ai.summary.sum$total)
+
+# do winter
+ai.summary.win <- fn.df.win.red %>%
+  group_by(treesp, deer) %>%
+  count(forage)
+
+### Rearrange the summary
+ai.summary.win <- spread(ai.summary.win, forage, n, is.na(0))
+ai.summary.win$total <- ai.summary.win$no + ai.summary.win$yes
+ai.summary.win$ai <- (ai.summary.win$yes/ai.summary.win$total)
+
+# calculate mean ai per spp +/- se and differentiate groups if se overlaps
+summer.ai.values <- ai.summary.sum %>%
+  group_by(treesp) %>%
+  dplyr::summarize(Mean = mean(ai, na.rm = T), 
+                   se = std.error(ai, na.rm = T)
+                   ) 
+
+summer.ai.values <- as.data.frame(summer.ai.values)
+summer.ai.values <- summer.ai.values %>%
+  dplyr::mutate(lower = (Mean - se), upper = (Mean + se))
+
+# In summary, Elm, Willow, Ash, Oak all are generally the same. Maple barely interescts with them on the upper end of things, but not worth calling a seperate group. Cedar, Hemlock and Pine fall out.
+
+```
+# Chunk 5, dbRDA of VOCs
+```{r}
+library(dplyr)
+library(vegan)
+library(ggplot2)
+
+voc.dat <- read.csv("C:/Users/mwuen/Documents/R/CH2_Cafe_Study/VOC.full.sheet.csv")
+#View(voc.dat)
+str(voc.dat)
+voc.dat$Species <- as.factor(voc.dat$Species)
+voc.dat$Preferrence <- as.factor(voc.dat$Preferrence)
+voc.dat$Acceptability <- as.factor(voc.dat$Acceptability) 
+
+#Drop Standard and toal.area column 
+voc.dat <- voc.dat %>%
+  dplyr::select(-X18.349_Decafluorobenzophenone, -total.area)
+
+#Row and column sums
+colsums <- apply(voc.dat[,5:96],2,sum)
+rowsums <- apply(voc.dat[,5:96],1,sum)
+
+# Making a new total area a column
+voc.dat$total.area <- apply(voc.dat[,5:96],1,sum)
+
+#Making a df with everything as a proportion
+voc.prop <- voc.dat[,5:96]/voc.dat[,97]
+
+#Bind it to the first 4 columns of original df
+voc.prop <- cbind(voc.dat[,1:4],voc.prop)
+
+# Subsetting your VOCs as one object and sample info into another
+vocs = voc.prop[,5:96]
+plant.characteristics = voc.dat[,1:4]
+
+# Distance based RDA using capscale function with bray curtis dissimilarity as the distance.
+voc.dbrda <- dbrda(vocs ~ Species, plant.characteristics, distance = "bray")
+
+# Obtain p-value for model significance.
+anova(voc.dbrda, by = "term") 
+
+# Obtain adjusted R-squared value. .6043
+RsquareAdj(voc.dbrda)
+
+# Obtaining output classes from dbRDA.
+class(voc.dbrda)
+
+# Summary scores of dbRDA.
+summary(voc.dbrda) #69.98% of the variance in this modeled ws explained by the constraining variables and 30.02% of the variance was unconstrained, meaning it cannot be explained by preference or species. Of the constrained variance, dbRDA1 explained 36.64% of total variance and dbRDA2 explained 12.03% of total variance
+
+#All eigenvalues of dbRDA and then percent variance explained by each axis.
+eigenvals(voc.dbrda)
+eigenvals(voc.dbrda)/sum(eigenvals(voc.dbrda))
+
+# Extracting coefficients from dbRDA and adding to original df and creating new df.
+voc.dbRDA.data <- cbind(voc.prop, scores(voc.dbrda, choices = c(1:3), display = "sites"))
+
+# % var explained by each ordination axis as an object. Use these numbers in the axis labels.
+voc.dbRDA.var <- eigenvals(voc.dbrda)/sum(eigenvals(voc.dbrda)) 
+
+# Set color pallette
+cbPalette <- c("#386EC2", "#59710D", "#e3bb4b", "#8A1907", "#A9AEB3", "#213958", "#e99696", "white")
+
+# RDA theme
+theme_PCA <- theme_classic() + # Classic theme with white background.
+		theme(aspect.ratio = 1, axis.title = (element_text(size = 10)), legend.title = element_text(face = "bold", size = 10), legend.text = element_text(size = 8), text = element_text(size = 10)) # Adjust plot and legend margins; bold titles.
+
+# Plot of dbRDA1 vs dbrda2. 
+voc.rda.plot.1.2 <- ggplot(data = voc.dbRDA.data, aes(x = dbRDA1 , y = dbRDA2)) + 
+  theme_PCA + 
+  geom_point(data = voc.dbRDA.data, aes(fill = Species, shape = Acceptability), size = 3, alpha = .8) +
+  labs(data = voc.dbRDA.data, x = "dbRDA1 (36.64%)", y = "dbRDA2 (12.03%)", color = "Species", shape = "Acceptability") +
+  ylim(min(voc.dbRDA.data$dbRDA2), max(voc.dbRDA.data$dbRDA2)) +
+  xlim(min(voc.dbRDA.data$dbRDA1), max(voc.dbRDA.data$dbRDA1)) +
+  scale_shape_manual(values = c(21,22,24), labels = c("Averse", "Accepted")) +
+  scale_fill_manual(labels = c("A. sacc", "F. amer", "J. virg", "P. stro", "Q. alba", "S. nigr", "T. cana", "U. amer"), values = cbPalette) +
+  guides(fill = guide_legend(override.aes=list(shape=21), shape = guide_legend(nrow = 2))) +
+  guides(shape = guide_legend(nrow = 2))
+  
+# Plot of dbRDA1 vs dbrda3. 
+voc.rda.plot.1.3 <- ggplot(data = voc.dbRDA.data, aes(x = dbRDA1 , y = dbRDA3)) + 
+  theme_PCA + 
+  geom_point(data = voc.dbRDA.data, aes(fill = Species, shape = Acceptability), size = 3, alpha = .8) +
+  labs(data = voc.dbRDA.data, x = "dbRDA1 (36.64%)", y = "dbRDA3 (9.68%)", color = "Species", shape = "Acceptability") +
+  ylim(min(voc.dbRDA.data$dbRDA3), max(voc.dbRDA.data$dbRDA3)) +
+  xlim(min(voc.dbRDA.data$dbRDA1), max(voc.dbRDA.data$dbRDA1)) +
+  scale_shape_manual(values = c(21,22,24), labels = c("Averse", "Accepted")) +
+  scale_fill_manual(labels = c("A. sacc", "F. amer", "J. virg", "P. stro", "Q. alba", "S. nigr", "T. cana", "U. amer"), values = cbPalette)+
+  guides(fill = guide_legend(override.aes=list(shape=21), shape = guide_legend(nrow = 2))) +
+  guides(shape = guide_legend(nrow = 2))
+  
+# Plot of dbRDA2 vs dbrda3. 
+voc.rda.plot.2.3 <- ggplot(data = voc.dbRDA.data, aes(x = dbRDA2 , y = dbRDA3)) + 
+  theme_PCA + 
+  geom_point(data = voc.dbRDA.data, aes(fill = Species, shape = Acceptability), size = 3, alpha = .8) +
+  labs(data = voc.dbRDA.data, x = "dbRDA2 (12.03%)", y = "dbRDA3 (9.68%)", color = "Species", shape = "Acceptability") +
+  ylim(min(voc.dbRDA.data$dbRDA3), max(voc.dbRDA.data$dbRDA3)) +
+  xlim(min(voc.dbRDA.data$dbRDA2), max(voc.dbRDA.data$dbRDA2)) +
+  scale_shape_manual(values = c(21,22,24), labels = c("Averse","Accepted")) +
+  scale_fill_manual(labels = c("A. sacc", "F. amer", "J. virg", "P. stro", "Q. alba", "S. nigr", "T. cana", "U. amer"), values = cbPalette)+
+  guides(fill = guide_legend(override.aes=list(shape=21), shape = guide_legend(nrow = 2))) +
+  guides(shape = guide_legend(nrow = 2))
+
+#Extract legend
+leg.voc <- get_legend(voc.rda.plot.1.2)
+leg.voc <- as_ggplot(leg.voc)
+
+
+combined.voc.plot <- (voc.rda.plot.1.2/voc.rda.plot.1.3/voc.rda.plot.2.3) + plot_layout(guides = "collect", ncol = 3) & theme( legend.position = "bottom")
+combined.voc.plot.leg <- combined.voc.plot #+ inset_element(leg.voc,left = 0.0, bottom = 0.45, right = 2.5, top = 0.5, on_top = FALSE, align_to = 'full')
+
+#ggsave("C:/Users/mwuen/Documents/R/CH2_Cafe_Study/VOCS.png", combined.voc.plot.leg, height = 4, width = 6.5, units = "in", dpi = 500)
+```
+# Spearman correlations
+```{r}
+# The WCGNA package is tricky to install, thus the extra code here. Langfelder, P. and Horvath, S., 2008. WGCNA: an R package for weighted correlation network analysis. BMC bioinformatics, 9(1), pp.1-13.
+
+#if (!requireNamespace("BiocManager", quietly = TRUE))
+    #install.packages("BiocManager")
+
+#BiocManager::install(c("GO.db", "impute", "preprocessCore", "WGCNA"), force = TRUE)
+#::install("WGCNA")
+
+library(WGCNA)
+
+# Make a numeric acceptability df
+tree.df <- as.data.frame(plant.characteristics[c(1:2)])
+accept.df <- data.frame(Species = c("Ul.am", "Sa.ni", "Ts.ca", "Ju.vi", "Ac.sa", "Fr.am", "Qu.al", "Pi.st"),
+                        Acceptability = c(1,1,0,0,1,1,1,0))
+
+# Merge the 2 dfs
+merged.df <- tree.df %>%
+  left_join(accept.df, by = "Species")
+
+# Drop the unused columns
+merged.df <- merged.df %>%
+  dplyr::select(-c(Species,Sample))
+
+# Spearman's correlation calculation between VOCs and numeric preference
+accept.corr.coeff <- cor(vocs, merged.df, method = "spearman")
+
+#Store dimmensions of data for p value calculations
+ntrees <- nrow(vocs)
+
+# P-values for VOC significance. This creates a data frame with a list of VOCs and their significant correlation (based on abundance) with each preference group.
+VOC.p.values <- corPvalueStudent(as.matrix(accept.corr.coeff), ntrees)
+View(VOC.p.values)
+
+#Making it a cleaned up df with compounds that are significantly correlated (p < 0.051)
+voc.p <- data.frame(VOC.p.values)
+View(voc.p)
+voc.p$compound <- rownames(voc.p)
+voc.p$compound <- as.factor(voc.p$compound)
+rownames(voc.p) <- NULL
+voc.p <- voc.p %>%
+  dplyr::relocate(compound, .before = Acceptability)
+voc.p2 <- voc.p %>%
+  dplyr::filter(Acceptability <.051)
+View(voc.p2)
+
+# Get mean +/- se of proportion for select VOCs by preference category.
+vocs.means <- voc.prop %>%
+  dplyr::group_by(Acceptability) %>%
+  summarise(across(where(is.numeric), list(mean = mean, se = std.error), na.rm = TRUE))
+View(vocs.means)
+
+#Write csvs for correlation coeff and p values
+#write.csv(voc.p2, "C:/Users/mwuen/Documents/R/CH2_Cafe_Study/voc.p.spearman.updated.csv")
+#write.csv(accept.corr.coeff, "C:/Users/mwuen/Documents/R/CH2_Cafe_Study/voc.coeff.spearman.updated.csv")
+#write.csv(vocs.means, "C:/Users/mwuen/Documents/R/CH2_Cafe_Study/voc.means.updated.csv")
+
+
+
+
+
+
+### Run spearman correlation for manly's selection now.
+
+# Make acceptability numeric.
+tree.man <- as.numeric(plant.characteristics$Preferrence)
+tree.man <- data.frame(tree.man)
+
+#Set numbers to 0 = avoided, 0.5 = neutral, 1 = preferred.
+tree.man$tree.man [tree.man$tree.man  == 1] <- 0
+tree.man$tree.man [tree.man$tree.man  == 2] <- 0.5
+tree.man$tree.man [tree.man$tree.man  == 3] <- 1
+
+# Spearman's correlation calculation between VOCs and numeric preference
+man.corr.coeff <- cor(vocs, tree.man, method = "spearman")
+
+#Store dimmensions of data for p value calculations
+ntrees <- nrow(vocs)
+
+# P-values for VOC significance. This creates a data frame with a list of VOCs and their significant correlation (based on abundance) with each preference group.
+VOC.p.values.man <- corPvalueStudent(as.matrix(man.corr.coeff), ntrees)
+View(VOC.p.values.man)
+
+#Making it a cleaned up df with compounds that are significantly correlated (p < 0.051)
+voc.p.man <- data.frame(VOC.p.values.man)
+View(voc.p.man)
+voc.p.man$compound <- rownames(voc.p.man)
+voc.p.man$compound <- as.factor(voc.p.man$compound)
+rownames(voc.p.man) <- NULL
+voc.p.man <- voc.p.man %>%
+  relocate(compound, .before = tree.man)
+voc.p2.man <- voc.p.man %>%
+  filter(tree.man <.051)
+View(voc.p2.man)
+
+# Get mean +/- se of proportion for select VOCs by preference category.
+vocs.means.man <- voc.prop %>%
+  dplyr::group_by(Preferrence) %>%
+  summarise(across(where(is.numeric), list(mean = mean, se = std.error), na.rm = TRUE))
+View(vocs.means.man)
+
+#Write csvs for correlation coeff and p values
+#write.csv(voc.p2.man, "C:/Users/mwuen/Documents/R/CH2_Cafe_Study/voc.p.manly.spearman.csv")
+#write.csv(man.corr.coeff, "C:/Users/mwuen/Documents/R/CH2_Cafe_Study/voc.coeff.manly.spearman.csv")
+
+#write.csv(vocs.means.man, "C:/Users/mwuen/Documents/R/CH2_Cafe_Study/voc.means.manly.csv")
+```
